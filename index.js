@@ -34,11 +34,6 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// --- AUTH ROUTES (Unchanged) ---
-app.post('/register', async (req, res) => { /* ... registration logic ... */ });
-app.post('/login', async (req, res) => { /* ... login logic ... */ });
-
-
 // --- Secure Playlist Route (FINAL VERSION) ---
 app.get('/playlist', async (req, res) => {
     const token = req.query.token;
@@ -93,7 +88,7 @@ app.get('/playlist', async (req, res) => {
     }
 });
 
-// Fill in the auth routes to make the file complete
+// --- AUTH ROUTES ---
 app.post('/register', async (req, res) => {
     const { username, email, password } = req.body;
     if (!username || !email || !password) return res.status(400).json({ success: false, message: 'All fields are required.' });
