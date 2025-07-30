@@ -1,71 +1,46 @@
 // index.js
-// This is your main server file.
+// DIAGNOSTIC VERSION: This temporarily disables the MySQL security check to confirm it's the source of the problem.
 
-// Load environment variables from a .env file for local testing
-// On Railway, you will set these variables in the dashboard
 require('dotenv').config();
-
 const express = require('express');
 const mongoose = require('mongoose');
-const mysql = require('mysql2/promise');
+// We don't need mysql2 for this test
+// const mysql = require('mysql2/promise'); 
 
 const app = express();
-// Railway provides the PORT environment variable automatically
 const PORT = process.env.PORT || 3000;
 
-// --- Database Connections ---
-
-// 1. MongoDB Connection (for channels)
+// --- MongoDB Connection ---
 const mongoUri = process.env.MONGO_URI;
 mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
     .then(() => console.log('MongoDB connected successfully.'))
     .catch(err => console.error('MongoDB connection error:', err));
 
-// 2. MySQL Connection (for validating user tokens)
-const mysqlPool = mysql.createPool({
-    host: process.env.MYSQL_HOST,
-    user: process.env.MYSQL_USER,
-    password: process.env.MYSQL_PASSWORD,
-    database: process.env.MYSQL_DATABASE,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
-});
-
-// --- Database Schemas ---
+// --- Database Schema ---
 const channelSchema = new mongoose.Schema({
-    name: String,
-    category: String,
-    type: String,
-    url: String,
-    drm_clearkey_keyId: String,
-    drm_clearkey_key: String
+    name: String, category: String, type: String, url: String,
+    drm_clearkey_keyId: String, drm_clearkey_key: String
 });
 const Channel = mongoose.model('Channel', channelSchema);
 
 
 // --- The Secure Playlist Route ---
-// NOTE: I've named the route `/playlist` instead of `/playlist.php` for simplicity
 app.get('/playlist', async (req, res) => {
     const token = req.query.token;
     if (!token) {
         return res.status(403).send("Error: Access token is missing.");
     }
-
-    const userAgent = req.get('User-Agent') || '';
-    if (!userAgent.toLowerCase().includes('ott-navigator')) {
-        return res.status(403).send("Error: This playlist can only be accessed by OTT Navigator.");
-    }
+    
+    // NOTE: The User-Agent and MySQL token validation checks are temporarily disabled for this test.
+    // This allows us to confirm that the core playlist generation is working.
 
     try {
-        // --- Security Check: Validate Token against MySQL database ---
-        const [rows] = await mysqlPool.execute('SELECT id FROM users WHERE playlist_token = ?', [token]);
-        if (rows.length === 0) {
-            return res.status(403).send("Error: Invalid access token.");
-        }
-
         // --- Playlist Generation ---
         const channels = await Channel.find({}).sort({ category: 1, name: 1 });
+
+        if (channels.length === 0) {
+            return res.status(404).send("Error: No channels found in the database.");
+        }
 
         let playlistContent = "#EXTM3U\n\n";
 
