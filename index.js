@@ -1,6 +1,5 @@
 // index.js
-// DIAGNOSTIC VERSION: This temporarily disables the User-Agent check
-// and logs the incoming User-Agent so we can identify it.
+// FINAL SECURE VERSION: The User-Agent security check is now re-enabled.
 
 require('dotenv').config();
 const express = require('express');
@@ -40,24 +39,23 @@ app.post('/register', async (req, res) => { /* ... registration logic ... */ });
 app.post('/login', async (req, res) => { /* ... login logic ... */ });
 
 
-// --- Secure Playlist Route (MODIFIED FOR DIAGNOSTICS) ---
+// --- Secure Playlist Route (FINAL VERSION) ---
 app.get('/playlist', async (req, res) => {
     const token = req.query.token;
     if (!token) {
         return res.status(403).send("Error: Access token is missing.");
     }
     
-    // --- DIAGNOSTIC STEP ---
+    // --- FINAL SECURITY CHECK ---
     const userAgent = req.get('User-Agent') || 'Not Provided';
-    // 1. We log the User-Agent to the Render logs.
-    console.log(`Playlist request received with User-Agent: ${userAgent}`);
-
-    // 2. We temporarily DISABLE the security check to allow the playlist to load.
-    /*
+    
+    // 1. We now re-enable the security check.
+    // The check for 'ott-navigator' (case-insensitive) is general enough
+    // to work for all versions of the app.
     if (!userAgent.toLowerCase().includes('ott-navigator')) {
+        console.log(`Blocked request from non-Navigator User-Agent: ${userAgent}`); // Optional: log blocked attempts
         return res.status(403).send("Error: This playlist can only be accessed by OTT Navigator.");
     }
-    */
 
     try {
         const user = await User.findOne({ playlist_token: token });
