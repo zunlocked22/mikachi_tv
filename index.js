@@ -1,5 +1,5 @@
 // index.js
-
+// FINAL VERSION with full User Authentication and Playlist Generation from MongoDB.
 
 require('dotenv').config();
 const express = require('express');
@@ -38,7 +38,7 @@ const userSchema = new mongoose.Schema({
 const User = mongoose.model('User', userSchema);
 
 
-// --- NEW: User Registration Route ---
+// --- User Registration Route ---
 app.post('/register', async (req, res) => {
     const { username, email, password } = req.body;
 
@@ -47,20 +47,15 @@ app.post('/register', async (req, res) => {
     }
 
     try {
-        // Check if user already exists
         const existingUser = await User.findOne({ $or: [{ username }, { email }] });
         if (existingUser) {
             return res.status(409).json({ success: false, message: 'Username or email already exists.' });
         }
 
-        // Hash the password
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
-
-        // Generate a unique playlist token
         const playlistToken = crypto.randomBytes(32).toString('hex');
 
-        // Create new user
         const newUser = new User({
             username,
             email,
@@ -78,7 +73,7 @@ app.post('/register', async (req, res) => {
 });
 
 
-// --- NEW: User Login Route ---
+// --- User Login Route ---
 app.post('/login', async (req, res) => {
     const { username, password } = req.body;
 
@@ -87,25 +82,24 @@ app.post('/login', async (req, res) => {
     }
 
     try {
-        // Find user by username
         const user = await User.findOne({ username });
         if (!user) {
             return res.status(404).json({ success: false, message: 'No account found with that username.' });
         }
 
-        // Check password
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
             return res.status(401).json({ success: false, message: 'The password you entered was not valid.' });
         }
 
-        // Login successful, send back user data to be stored in PHP session
+        // FIXED: Now includes the playlist_token in the response
         res.status(200).json({
             success: true,
             message: 'Login successful!',
             userData: {
-                id: user._id, // MongoDB uses _id
-                username: user.username
+                id: user._id,
+                username: user.username,
+                playlist_token: user.playlist_token // Add this line
             }
         });
 
@@ -116,9 +110,8 @@ app.post('/login', async (req, res) => {
 });
 
 
-// --- Secure Playlist Route (Unchanged) ---
+// --- Secure Playlist Route ---
 app.get('/playlist', async (req, res) => {
-    // ... (The playlist generation code is the same as the last version)
     const token = req.query.token;
     if (!token) {
         return res.status(403).send("Error: Access token is missing.");
@@ -159,14 +152,6 @@ app.get('/playlist', async (req, res) => {
         res.status(500).send("An internal server error occurred.");
     }
 });
-
-// Update package.json to include "bcryptjs" and "cors"
-// Then run "npm install" locally
-// "dependencies": {
-//   ...
-//   "bcryptjs": "^2.4.3",
-//   "cors": "^2.8.5"
-// }
 
 // Start the server
 app.listen(PORT, () => {
