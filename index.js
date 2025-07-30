@@ -1,5 +1,5 @@
 // index.js
-// FINAL SECURE VERSION: The User-Agent security check is now re-enabled.
+// FINAL DIAGNOSTIC VERSION: Adds detailed logging to pinpoint the failure.
 
 require('dotenv').config();
 const express = require('express');
@@ -34,34 +34,41 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// --- Secure Playlist Route (FINAL VERSION) ---
+// --- Secure Playlist Route (WITH DETAILED LOGGING) ---
 app.get('/playlist', async (req, res) => {
+    console.log('--- Playlist Request Started ---');
     const token = req.query.token;
     if (!token) {
+        console.log('Request failed: Token is missing.');
         return res.status(403).send("Error: Access token is missing.");
     }
-    
-    // --- FINAL SECURITY CHECK ---
+    console.log(`Token received: ${token}`);
+
     const userAgent = req.get('User-Agent') || 'Not Provided';
-    
-    // 1. We now re-enable the security check.
-    // The check for 'ott-navigator' (case-insensitive) is general enough
-    // to work for all versions of the app.
+    console.log(`User-Agent received: ${userAgent}`);
     if (!userAgent.toLowerCase().includes('ott-navigator')) {
-        console.log(`Blocked request from non-Navigator User-Agent: ${userAgent}`); // Optional: log blocked attempts
+        console.log(`Request failed: User-Agent is not OTT Navigator.`);
         return res.status(403).send("Error: This playlist can only be accessed by OTT Navigator.");
     }
 
     try {
+        console.log('Attempting to find user in MongoDB...');
         const user = await User.findOne({ playlist_token: token });
+
         if (!user) {
+            console.log('Request failed: User with this token was not found in the database.');
             return res.status(403).send("Error: Invalid access token.");
         }
-        
+        console.log(`User found: ${user.username} (ID: ${user._id})`);
+
+        console.log('User validated successfully. Fetching channels...');
         const channels = await Channel.find({}).sort({ category: 1, name: 1 });
+
         if (channels.length === 0) {
+            console.log('Request failed: No channels found in the database.');
             return res.status(404).send("Error: No channels found in the database.");
         }
+        console.log(`Found ${channels.length} channels. Generating playlist content...`);
 
         let playlistContent = "#EXTM3U\n\n";
         for (const channel of channels) {
@@ -78,15 +85,20 @@ app.get('/playlist', async (req, res) => {
             }
             playlistContent += `${url}\n\n`;
         }
+
+        console.log('Playlist generated successfully. Sending response.');
         res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
         res.setHeader('Content-Disposition', 'attachment; filename="mikachi_tv_playlist.m3u"');
         res.send(playlistContent);
 
     } catch (error) {
-        console.error("Server error:", error);
-        res.status(500).send("An internal server error occurred.");
+        // This is the most important part. It will log the exact error.
+        console.error("!!! CRITICAL ERROR during playlist generation:", error);
+        res.status(500).send("An internal server error occurred. Please check the server logs.");
     }
+    console.log('--- Playlist Request Finished ---');
 });
+
 
 // --- AUTH ROUTES ---
 app.post('/register', async (req, res) => {
