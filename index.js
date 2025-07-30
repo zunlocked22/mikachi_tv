@@ -1,5 +1,5 @@
 // index.js
-// FINAL DIAGNOSTIC VERSION: Adds detailed logging to pinpoint the failure.
+// FINAL SECURE VERSION: Corrects the User-Agent check to use a space.
 
 require('dotenv').config();
 const express = require('express');
@@ -34,7 +34,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// --- Secure Playlist Route (WITH DETAILED LOGGING) ---
+// --- Secure Playlist Route (WITH CORRECTED CHECK) ---
 app.get('/playlist', async (req, res) => {
     console.log('--- Playlist Request Started ---');
     const token = req.query.token;
@@ -46,7 +46,9 @@ app.get('/playlist', async (req, res) => {
 
     const userAgent = req.get('User-Agent') || 'Not Provided';
     console.log(`User-Agent received: ${userAgent}`);
-    if (!userAgent.toLowerCase().includes('ott-navigator')) {
+    
+    // FIXED: The check now correctly looks for "ott navigator" with a space.
+    if (!userAgent.toLowerCase().includes('ott navigator')) {
         console.log(`Request failed: User-Agent is not OTT Navigator.`);
         return res.status(403).send("Error: This playlist can only be accessed by OTT Navigator.");
     }
@@ -92,7 +94,6 @@ app.get('/playlist', async (req, res) => {
         res.send(playlistContent);
 
     } catch (error) {
-        // This is the most important part. It will log the exact error.
         console.error("!!! CRITICAL ERROR during playlist generation:", error);
         res.status(500).send("An internal server error occurred. Please check the server logs.");
     }
