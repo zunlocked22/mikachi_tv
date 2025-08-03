@@ -1,5 +1,5 @@
 // index.js
-// FINAL SECURE VERSION: Corrects the User-Agent check to use a space.
+// FINAL VERSION with Logos, Group Titles, User Auth, and Playlist Generation.
 
 require('dotenv').config();
 const express = require('express');
@@ -34,70 +34,63 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// --- Secure Playlist Route (WITH CORRECTED CHECK) ---
+
+// --- Secure Playlist Route (UPDATED WITH LOGOS & GROUPS) ---
 app.get('/playlist', async (req, res) => {
-    console.log('--- Playlist Request Started ---');
     const token = req.query.token;
     if (!token) {
-        console.log('Request failed: Token is missing.');
         return res.status(403).send("Error: Access token is missing.");
     }
-    console.log(`Token received: ${token}`);
-
-    const userAgent = req.get('User-Agent') || 'Not Provided';
-    console.log(`User-Agent received: ${userAgent}`);
     
-    // FIXED: The check now correctly looks for "ott navigator" with a space.
+    const userAgent = req.get('User-Agent') || 'Not Provided';
     if (!userAgent.toLowerCase().includes('ott navigator')) {
-        console.log(`Request failed: User-Agent is not OTT Navigator.`);
         return res.status(403).send("Error: This playlist can only be accessed by OTT Navigator.");
     }
 
     try {
-        console.log('Attempting to find user in MongoDB...');
         const user = await User.findOne({ playlist_token: token });
-
         if (!user) {
-            console.log('Request failed: User with this token was not found in the database.');
             return res.status(403).send("Error: Invalid access token.");
         }
-        console.log(`User found: ${user.username} (ID: ${user._id})`);
-
-        console.log('User validated successfully. Fetching channels...');
+        
         const channels = await Channel.find({}).sort({ category: 1, name: 1 });
-
         if (channels.length === 0) {
-            console.log('Request failed: No channels found in the database.');
             return res.status(404).send("Error: No channels found in the database.");
         }
-        console.log(`Found ${channels.length} channels. Generating playlist content...`);
 
+        // --- MODIFICATION START ---
+        const logoUrl = "https://the-bithub.com/MikachiUrl-Logo-010101";
         let playlistContent = "#EXTM3U\n\n";
+
         for (const channel of channels) {
             const name = channel.name;
+            const category = channel.category || "Uncategorized"; // Use category for group-title
             const url = channel.url;
+            
+            // Construct the EXTINF line with the new attributes
+            playlistContent += `#EXTINF:-1 tvg-name="${name}" tvg-logo="${logoUrl}" group-title="${category}",${name}\n`;
+            
             const referer = "https://www.visionplus.id/";
             const genericUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36";
-            playlistContent += `#EXTINF:-1 tvg-name="${name}",${name}\n`;
             playlistContent += `#EXTVLCOPT:http-user-agent=${genericUserAgent}\n`;
             playlistContent += `#EXTVLCOPT:http-referrer=${referer}\n`;
+
             if (channel.type === 'mpd' && channel.drm_clearkey_keyId && channel.drm_clearkey_key) {
                 playlistContent += `#KODIPROP:inputstream.adaptive.license_type=org.w3.clearkey\n`;
                 playlistContent += `#KODIPROP:inputstream.adaptive.license_key=${channel.drm_clearkey_keyId}:${channel.drm_clearkey_key}\n`;
             }
             playlistContent += `${url}\n\n`;
         }
+        // --- MODIFICATION END ---
 
-        console.log('Playlist generated successfully. Sending response.');
         res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
         res.setHeader('Content-Disposition', 'attachment; filename="mikachi_tv_playlist.m3u"');
         res.send(playlistContent);
 
     } catch (error) {
-        console.error("!!! CRITICAL ERROR during playlist generation:", error);
-        res.status(500).send("An internal server error occurred. Please check the server logs.");
+        console.error("Server error:", error);
+        res.status(500).send("An internal server error occurred.");
     }
-    console.log('--- Playlist Request Finished ---');
 });
 
 
