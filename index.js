@@ -1,5 +1,4 @@
-// index.js
-// FINAL VERSION with Logos, Group Titles, User Auth, and Playlist Generation.
+
 
 require('dotenv').config();
 const express = require('express');
@@ -35,83 +34,56 @@ const userSchema = new mongoose.Schema({
 const User = mongoose.model('User', userSchema);
 
 
-// --- Secure Playlist Route (UPDATED WITH LOGOS & GROUPS) ---
-app.get('/playlist', async (req, res) => {
-    const token = req.query.token;
-    if (!token) {
-        return res.status(403).send("Error: Access token is missing.");
-    }
-    
-    const userAgent = req.get('User-Agent') || 'Not Provided';
-    if (!userAgent.toLowerCase().includes('ott navigator')) {
-        return res.status(403).send("Error: This playlist can only be accessed by OTT Navigator.");
-    }
-
-    try {
-        const user = await User.findOne({ playlist_token: token });
-        if (!user) {
-            return res.status(403).send("Error: Invalid access token.");
-        }
-        
-        const channels = await Channel.find({}).sort({ category: 1, name: 1 });
-        if (channels.length === 0) {
-            return res.status(404).send("Error: No channels found in the database.");
-        }
-
-        // --- MODIFICATION START ---
-        const logoUrl = "https://the-bithub.com/MikachiUrl-Logo-010101";
-        let playlistContent = "#EXTM3U\n\n";
-
-        for (const channel of channels) {
-            const name = channel.name;
-            const category = channel.category || "Uncategorized"; // Use category for group-title
-            const url = channel.url;
-            
-            // Construct the EXTINF line with the new attributes
-            playlistContent += `#EXTINF:-1 tvg-name="${name}" tvg-logo="${logoUrl}" group-title="${category}",${name}\n`;
-            
-            const referer = "https://www.visionplus.id/";
-            const genericUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36";
-            playlistContent += `#EXTVLCOPT:http-user-agent=${genericUserAgent}\n`;
-            playlistContent += `#EXTVLCOPT:http-referrer=${referer}\n`;
-
-            if (channel.type === 'mpd' && channel.drm_clearkey_keyId && channel.drm_clearkey_key) {
-                playlistContent += `#KODIPROP:inputstream.adaptive.license_type=org.w3.clearkey\n`;
-                playlistContent += `#KODIPROP:inputstream.adaptive.license_key=${channel.drm_clearkey_keyId}:${channel.drm_clearkey_key}\n`;
-            }
-            playlistContent += `${url}\n\n`;
-        }
-        // --- MODIFICATION END ---
-
-        res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
-        res.setHeader('Content-Disposition', 'attachment; filename="mikachi_tv_playlist.m3u"');
-        res.send(playlistContent);
-
-    } catch (error) {
-        console.error("Server error:", error);
-        res.status(500).send("An internal server error occurred.");
-    }
-});
-
-
-// --- AUTH ROUTES ---
+// --- User Registration Route (UPDATED WITH ENHANCED SECURITY) ---
 app.post('/register', async (req, res) => {
     const { username, email, password } = req.body;
-    if (!username || !email || !password) return res.status(400).json({ success: false, message: 'All fields are required.' });
+
+    // --- NEW: Stricter Validation ---
+    if (!username || !email || !password) {
+        return res.status(400).json({ success: false, message: 'All fields are required.' });
+    }
+
+    // 1. Password Length Check
+    if (password.length < 8) {
+        return res.status(400).json({ success: false, message: 'Password must be at least 8 characters long.' });
+    }
+
+    // 2. Email Domain Check
+    const allowedDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'outlook.ph'];
+    const emailDomain = email.split('@')[1];
+    if (!allowedDomains.includes(emailDomain)) {
+        return res.status(400).json({ success: false, message: 'Please use a valid email provider (e.g., Gmail, Yahoo, Outlook).' });
+    }
+    // --- End of New Validation ---
+
     try {
         const existingUser = await User.findOne({ $or: [{ username }, { email }] });
-        if (existingUser) return res.status(409).json({ success: false, message: 'Username or email already exists.' });
+        if (existingUser) {
+            return res.status(409).json({ success: false, message: 'Username or email already exists.' });
+        }
+
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
         const playlistToken = crypto.randomBytes(32).toString('hex');
-        const newUser = new User({ username, email, password: hashedPassword, playlist_token: playlistToken });
+
+        const newUser = new User({
+            username,
+            email,
+            password: hashedPassword,
+            playlist_token: playlistToken
+        });
+
         await newUser.save();
         res.status(201).json({ success: true, message: 'Registration successful! You can now log in.' });
+
     } catch (error) {
         console.error('Registration error:', error);
         res.status(500).json({ success: false, message: 'Server error during registration.' });
     }
 });
+
+
+// --- User Login Route ---
 app.post('/login', async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ success: false, message: 'Please enter username and password.' });
@@ -130,6 +102,51 @@ app.post('/login', async (req, res) => {
     }
 });
 
+
+// --- Secure Playlist Route ---
+app.get('/playlist', async (req, res) => {
+    const token = req.query.token;
+    if (!token) {
+        return res.status(403).send("Error: Access token is missing.");
+    }
+    const userAgent = req.get('User-Agent') || 'Not Provided';
+    if (!userAgent.toLowerCase().includes('ott navigator')) {
+        return res.status(403).send("Error: This playlist can only be accessed by OTT Navigator.");
+    }
+    try {
+        const user = await User.findOne({ playlist_token: token });
+        if (!user) {
+            return res.status(403).send("Error: Invalid access token.");
+        }
+        const channels = await Channel.find({}).sort({ category: 1, name: 1 });
+        if (channels.length === 0) {
+            return res.status(404).send("Error: No channels found in the database.");
+        }
+        const logoUrl = "https://the-bithub.com/MikachiUrl-Logo-010101";
+        let playlistContent = "#EXTM3U\n\n";
+        for (const channel of channels) {
+            const name = channel.name;
+            const category = channel.category || "Uncategorized";
+            const url = channel.url;
+            playlistContent += `#EXTINF:-1 tvg-name="${name}" tvg-logo="${logoUrl}" group-title="${category}",${name}\n`;
+            const referer = "https://www.visionplus.id/";
+            const genericUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36";
+            playlistContent += `#EXTVLCOPT:http-user-agent=${genericUserAgent}\n`;
+            playlistContent += `#EXTVLCOPT:http-referrer=${referer}\n`;
+            if (channel.type === 'mpd' && channel.drm_clearkey_keyId && channel.drm_clearkey_key) {
+                playlistContent += `#KODIPROP:inputstream.adaptive.license_type=org.w3.clearkey\n`;
+                playlistContent += `#KODIPROP:inputstream.adaptive.license_key=${channel.drm_clearkey_keyId}:${channel.drm_clearkey_key}\n`;
+            }
+            playlistContent += `${url}\n\n`;
+        }
+        res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename="mikachi_tv_playlist.m3u"');
+        res.send(playlistContent);
+    } catch (error) {
+        console.error("Server error:", error);
+        res.status(500).send("An internal server error occurred.");
+    }
+});
 
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
