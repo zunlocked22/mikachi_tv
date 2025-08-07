@@ -1,5 +1,5 @@
 // index.js
-// FINAL VERSION with Admin Dashboard features.
+// FINAL VERSION with Admin Dashboard Pagination.
 
 require('dotenv').config();
 const express = require('express');
@@ -26,13 +26,12 @@ const channelSchema = new mongoose.Schema({
 });
 const Channel = mongoose.model('Channel', channelSchema);
 
-// MODIFIED: Added isAdmin field to the user schema
 const userSchema = new mongoose.Schema({
     username: { type: String, unique: true, required: true, trim: true },
     password: { type: String, required: true },
     email: { type: String, unique: true, required: true, trim: true },
     playlist_token: { type: String, unique: true, required: true },
-    isAdmin: { type: Boolean, default: false }, // New field for admin role
+    isAdmin: { type: Boolean, default: false },
     created_at: { type: Date, default: Date.now }
 });
 const User = mongoose.model('User', userSchema);
@@ -40,25 +39,16 @@ const User = mongoose.model('User', userSchema);
 
 // --- User Registration Route ---
 app.post('/register', async (req, res) => {
+    // ... (This code is unchanged)
     const { username, email, password } = req.body;
-
-    if (!username || !email || !password) {
-        return res.status(400).json({ success: false, message: 'All fields are required.' });
-    }
-    if (password.length < 8) {
-        return res.status(400).json({ success: false, message: 'Password must be at least 8 characters long.' });
-    }
+    if (!username || !email || !password) return res.status(400).json({ success: false, message: 'All fields are required.' });
+    if (password.length < 8) return res.status(400).json({ success: false, message: 'Password must be at least 8 characters long.' });
     const allowedDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'outlook.ph'];
     const emailDomain = email.split('@')[1];
-    if (!allowedDomains.includes(emailDomain)) {
-        return res.status(400).json({ success: false, message: 'Please use a valid email provider (e.g., Gmail, Yahoo, Outlook).' });
-    }
-
+    if (!allowedDomains.includes(emailDomain)) return res.status(400).json({ success: false, message: 'Please use a valid email provider.' });
     try {
         const existingUser = await User.findOne({ $or: [{ username }, { email }] });
-        if (existingUser) {
-            return res.status(409).json({ success: false, message: 'Username or email already exists.' });
-        }
+        if (existingUser) return res.status(409).json({ success: false, message: 'Username or email already exists.' });
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
         const playlistToken = crypto.randomBytes(32).toString('hex');
@@ -72,8 +62,9 @@ app.post('/register', async (req, res) => {
 });
 
 
-// --- User Login Route (MODIFIED) ---
+// --- User Login Route ---
 app.post('/login', async (req, res) => {
+    // ... (This code is unchanged)
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ success: false, message: 'Please enter username and password.' });
     try {
@@ -81,17 +72,9 @@ app.post('/login', async (req, res) => {
         if (!user) return res.status(404).json({ success: false, message: 'No account found with that username.' });
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(401).json({ success: false, message: 'The password you entered was not valid.' });
-        
-        // MODIFIED: Send back the isAdmin status on successful login
         res.status(200).json({
-            success: true,
-            message: 'Login successful!',
-            userData: {
-                id: user._id,
-                username: user.username,
-                playlist_token: user.playlist_token,
-                isAdmin: user.isAdmin // Include the admin status
-            }
+            success: true, message: 'Login successful!',
+            userData: { id: user._id, username: user.username, playlist_token: user.playlist_token, isAdmin: user.isAdmin }
         });
     } catch (error) {
         console.error('Login error:', error);
@@ -100,32 +83,43 @@ app.post('/login', async (req, res) => {
 });
 
 
-// --- NEW: Admin Route to Get All Users ---
+// --- Admin Route to Get All Users (UPDATED WITH PAGINATION) ---
 app.get('/admin/users', async (req, res) => {
-    // This is a protected route. It requires a valid user token in the header.
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // Expects "Bearer <token>"
+    const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {
         return res.status(401).json({ success: false, message: 'Unauthorized: No token provided.' });
     }
 
     try {
-        // Find the user making the request
         const requestingUser = await User.findOne({ playlist_token: token });
-        if (!requestingUser) {
-            return res.status(403).json({ success: false, message: 'Forbidden: Invalid token.' });
-        }
-
-        // Check if the user is an admin
-        if (!requestingUser.isAdmin) {
+        if (!requestingUser || !requestingUser.isAdmin) {
             return res.status(403).json({ success: false, message: 'Forbidden: You do not have admin privileges.' });
         }
 
-        // If the user is an admin, fetch all users from the database
-        // The '-password' part tells MongoDB to exclude the password field for security.
-        const allUsers = await User.find({}, '-password').sort({ created_at: -1 });
-        res.status(200).json({ success: true, users: allUsers });
+        // --- PAGINATION LOGIC ---
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 15;
+        const skip = (page - 1) * limit;
+
+        // Get total number of users for calculating total pages
+        const totalUsers = await User.countDocuments();
+        const totalPages = Math.ceil(totalUsers / limit);
+
+        // Fetch the paginated list of users
+        const users = await User.find({}, '-password')
+            .sort({ created_at: -1 })
+            .skip(skip)
+            .limit(limit);
+        
+        res.status(200).json({ 
+            success: true, 
+            users: users,
+            totalPages: totalPages,
+            currentPage: page,
+            totalUsers: totalUsers
+        });
 
     } catch (error) {
         console.error('Admin fetch users error:', error);
@@ -136,7 +130,7 @@ app.get('/admin/users', async (req, res) => {
 
 // --- Secure Playlist Route (Unchanged) ---
 app.get('/playlist', async (req, res) => {
-    // ... (This code remains the same as the last working version)
+    // ... (This code remains the same)
     const token = req.query.token;
     if (!token) return res.status(403).send("Error: Access token is missing.");
     const userAgent = req.get('User-Agent') || 'Not Provided';
